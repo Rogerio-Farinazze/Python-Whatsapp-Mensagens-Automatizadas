@@ -16,6 +16,9 @@ for linha in pagina_clientes.iter_rows(min_row=2):
     vencimento = linha[2].value
     mes = data_atual.month
     hoje = data_atual.day
+    
+    print(f'Nome: {nome} | Telefone: {telefone} | Hoje: {hoje} | Vencimento: {vencimento}')
+        
     if (vencimento > hoje):
         print("Teste1")
         mensagem = f'Olá {nome}, seu boleto vence dia {vencimento}/{mes}, acesse https://site.com.br/boleto'
@@ -24,9 +27,11 @@ for linha in pagina_clientes.iter_rows(min_row=2):
             link_whats = f'https://web.whatsapp.com/send?phone={telefone}&text={quote(mensagem)}'
             webbrowser.open(link_whats)
             sleep(7)
-            seta = pyautogui.locateCenterOnScreen('seta.png')
+            pyautogui.press('esc')
+            #seta = pyautogui.locateCenterOnScreen('seta.png')
             sleep(2)
-            pyautogui.click(seta[0],seta[1])
+            pyautogui.press('enter')
+            #pyautogui.click(seta[0],seta[1])
             sleep(2)
             pyautogui.hotkey('ctrl', 'w')
             sleep(2)
@@ -37,3 +42,6 @@ for linha in pagina_clientes.iter_rows(min_row=2):
             pyautogui.hotkey('ctrl', 'w')
     print("Teste2")
 
+
+    
+    
