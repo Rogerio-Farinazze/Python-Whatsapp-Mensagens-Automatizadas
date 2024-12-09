@@ -6,19 +6,21 @@ from urllib.parse import quote
 import webbrowser
 from time import sleep
 import pyautogui
+
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication,
     QWidget,
     QVBoxLayout,
     QPushButton,
-    QLineEdit,
     QTextEdit,
     QTableWidget,
     QTableWidgetItem,
     QFileDialog,
     QMessageBox,
     QLabel,
-    QHBoxLayout,
+    QDesktopWidget,
+    QCheckBox,
 )
 # Define o locale para o padrão brasileiro
 locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
@@ -31,10 +33,20 @@ class JanelaPrincipal(QWidget):
         # Atributos para armazenar dados
         self.dados_planilha = []
         self.caminho_planilha = ""
+        self.carregando_tabela = False  # Evita loops desnecessários ao alterar o grid
+
 
     def init_ui(self):
-        self.setWindowTitle("Envio de Mensagens pelo WhatsApp")
-        self.setGeometry(100, 100, 800, 600)
+        sizeDisplay = QDesktopWidget().screenGeometry(-1)
+        sizeDisplayX = sizeDisplay.width()
+        sizeDisplayY = sizeDisplay.height()
+        sizeGeometryX = 800
+        sizeGeometryY = 600
+        positionX = int(sizeDisplayX/2 - sizeGeometryX/2)
+        positionY = int(sizeDisplayY/2 - sizeGeometryY/2)
+
+        self.setWindowTitle("Envio de Mensagens WhatsApp")
+        self.setGeometry(positionX, positionY, sizeGeometryX, sizeGeometryY)
 
         # Layout principal
         layout = QVBoxLayout()
@@ -51,13 +63,19 @@ class JanelaPrincipal(QWidget):
 
         # Tabela para exibir os dados da planilha
         self.tabela = QTableWidget()
-        self.tabela.setColumnCount(4)  # Número de colunas: Nome, Telefone, Data Limite, Valor
-        self.tabela.setHorizontalHeaderLabels(["Nome", "Telefone", "Data Limite", "Valor"])
+        self.tabela.setColumnCount(5)  # Número de colunas: Nome, Telefone, Data Limite, Valor, Enviar?
+        self.tabela.setHorizontalHeaderLabels(["Nome", "Telefone", "Data Limite", "Valor", "Enviar?"])
+        self.tabela.cellChanged.connect(self.atualizar_dados)  # Detecta alterações no grid
         layout.addWidget(self.tabela)
+
+        # Botão para remover linha
+        self.botao_remover = QPushButton("Remover Linha")
+        self.botao_remover.clicked.connect(self.remover_linha)
+        layout.addWidget(self.botao_remover)
 
         # Campo para o usuário inserir a mensagem
         layout.addWidget(QLabel("Mensagem personalizada:"))
-        self.campo_mensagem = QTextEdit()
+        self.campo_mensagem = QTextEdit("Olá {nome}, sua mensalidade no valor de R$ {valor_devido} vence no dia {data_limite}.")
         layout.addWidget(self.campo_mensagem)
 
         # Botão para iniciar o envio
@@ -127,26 +145,73 @@ class JanelaPrincipal(QWidget):
 
             # Lê as linhas da planilha e armazena em `dados_planilha`
             for linha in pagina_clientes.iter_rows(min_row=2, values_only=True):
-                self.dados_planilha.append(linha)
+                self.dados_planilha.append(list(linha) + [True])  # Adiciona a coluna "Enviar?"
 
-            # Exibe os dados na tabela
+            # Preenche os dados na tabela
+            self.carregando_tabela = True  # Evita detecção de alterações durante o carregamento
             self.tabela.setRowCount(len(self.dados_planilha))
             for i, linha in enumerate(self.dados_planilha):
                 for j, valor in enumerate(linha):
-                    # Formatar a coluna "Valor" com R$ e duas casas decimais (padrão brasileiro)
                     if j == 3:  # Coluna Valor
                         valor = f"R$ {locale.format_string('%.2f', valor, grouping=True)}" if valor is not None else "R$ 0,00"
+                    elif j == 4:  # Coluna Enviar? (checkbox)
+                        checkbox = QTableWidgetItem()
+                        checkbox.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                        checkbox.setCheckState(Qt.Checked if valor else Qt.Unchecked)
+                        self.tabela.setItem(i, j, checkbox)
+                        continue
                     self.tabela.setItem(i, j, QTableWidgetItem(str(valor)))
+            self.carregando_tabela = False
 
             QMessageBox.information(self, "Sucesso", "Planilha carregada com sucesso!")
 
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao carregar a planilha: {e}")
 
+    def atualizar_dados(self, row, column):
+        # Atualiza os dados na lista quando a tabela é alterada
+        if self.carregando_tabela:
+            return  # Ignora alterações durante o carregamento inicial
+
+        if column == 4:  # Coluna Enviar? (checkbox)
+            checkbox = self.tabela.item(row, column)
+            self.dados_planilha[row][column] = checkbox.checkState() == Qt.Checked
+        else:
+            novo_valor = self.tabela.item(row, column).text()
+
+            # Formata a coluna Valor
+            if column == 3:
+                novo_valor = novo_valor.replace("R$", "").replace(".", "").replace(",", ".").strip()
+                try:
+                    valor_formatado = float(novo_valor)
+                    self.dados_planilha[row][column] = valor_formatado
+                    valor_exibicao = f"R$ {locale.format_string('%.2f', valor_formatado, grouping=True)}"
+                    self.tabela.blockSignals(True)
+                    self.tabela.setItem(row, column, QTableWidgetItem(valor_exibicao))
+                    self.tabela.blockSignals(False)
+                except ValueError:
+                    QMessageBox.warning(self, "Erro", f"Valor inválido na linha {row + 1}.")
+                    return
+            else:
+                self.dados_planilha[row][column] = novo_valor
+
+    def remover_linha(self):
+        # Remove a linha selecionada no grid
+        linha_selecionada = self.tabela.currentRow()
+        if linha_selecionada == -1:
+            QMessageBox.warning(self, "Aviso", "Selecione uma linha para remover.")
+            return
+
+        # Remove a linha da tabela e da lista de dados
+        self.tabela.removeRow(linha_selecionada)
+        self.dados_planilha.pop(linha_selecionada)
+
     def iniciar_envio(self):
-        # Verifica se a planilha foi carregada
-        if not self.dados_planilha:
-            QMessageBox.warning(self, "Aviso", "Carregue uma planilha antes de iniciar o envio.")
+        # Filtra apenas as linhas marcadas para envio
+        linhas_para_enviar = [linha for linha in self.dados_planilha if linha[4]]  # Verifica o estado do checkbox
+
+        if not linhas_para_enviar:
+            QMessageBox.warning(self, "Aviso", "Nenhuma linha marcada para envio.")
             return
 
         # Obtém a mensagem personalizada
@@ -160,8 +225,8 @@ class JanelaPrincipal(QWidget):
         mensagem_base += rodape
 
         # Inicia o processo de envio
-        for linha in self.dados_planilha:
-            nome, telefone, data_limite, valor_devido = linha
+        for linha in linhas_para_enviar:
+            nome, telefone, data_limite, valor_devido, _ = linha
             mensagem = mensagem_base.format(
                 nome=nome, telefone=telefone, data_limite=data_limite, valor_devido=f"R$ {locale.format_string('%.2f', valor_devido, grouping=True)}" if valor_devido is not None else "R$ 0,00"
             )
@@ -183,7 +248,6 @@ class JanelaPrincipal(QWidget):
                     arquivo.write(f'\r\n{nome},{telefone}')
 
         QMessageBox.information(self, "Envio Concluído", "Mensagens enviadas com sucesso!")
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
